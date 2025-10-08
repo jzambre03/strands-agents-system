@@ -25,7 +25,6 @@ from strands.models.bedrock import BedrockModel
 from strands.tools import tool
 
 import sys
-from pathlib import Path
 
 # Add the parent directory to Python path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent.resolve()))
@@ -200,6 +199,28 @@ class DiffPolicyEngineAgent(Agent):
             
             # Focus on config and dependency deltas (most important)
             all_deltas_to_analyze = config_deltas[:30] + dep_deltas[:10]  # Reduced limit for more reliable JSON
+            
+            # DEDUPLICATION: Remove duplicate deltas before LLM processing
+            logger.info(f"\n🔍 Deduplicating {len(all_deltas_to_analyze)} deltas before LLM analysis...")
+            
+            # Create unique key for each delta to identify duplicates
+            seen_deltas = {}
+            deduplicated_deltas = []
+            
+            for delta in all_deltas_to_analyze:
+                # Create unique key: file + key + old_value + new_value + category
+                unique_key = f"{delta.get('file', '')}:{delta.get('key', '')}:{delta.get('old_value', '')}:{delta.get('new_value', '')}:{delta.get('category', '')}"
+                
+                if unique_key not in seen_deltas:
+                    seen_deltas[unique_key] = delta
+                    deduplicated_deltas.append(delta)
+                else:
+                    logger.debug(f"   🔄 Skipping duplicate delta: {delta.get('file', '')}:{delta.get('key', '')}")
+            
+            logger.info(f"   ✅ Deduplicated: {len(all_deltas_to_analyze)} → {len(deduplicated_deltas)} deltas")
+            
+            # Update the deltas to analyze with deduplicated version
+            all_deltas_to_analyze = deduplicated_deltas
 
             # Group deltas by file and split large files into smaller batches
             deltas_by_file = {}
@@ -384,8 +405,6 @@ class DiffPolicyEngineAgent(Agent):
             }
             
             # Save enhanced analysis to file
-            from pathlib import Path
-            from datetime import datetime
             
             PROJECT_ROOT = Path(context_bundle_file).parent.parent.parent  # Up from bundle_xxx to config_data
             ANALYSIS_DIR = PROJECT_ROOT / "enhanced_analysis"
@@ -498,6 +517,10 @@ Always provide clear, actionable insights with specific reasoning for your asses
 
         if not (PROJECT_ROOT / "config_data").exists():
             PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.resolve()
+        
+        # Ensure PROJECT_ROOT is always a Path object
+        if not isinstance(PROJECT_ROOT, Path):
+            PROJECT_ROOT = Path(PROJECT_ROOT)
 
         SCRUBBED_ANALYSIS_DIR = PROJECT_ROOT / "config_data" / "scrubbed_analysis"
 
