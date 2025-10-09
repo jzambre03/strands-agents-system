@@ -132,6 +132,12 @@
       }
 
       function getChangeType(item) {
+        // PRIORITY 1: Use drift_category from LLM output if available
+        if (item.drift_category) {
+          return item.drift_category;
+        }
+        
+        // PRIORITY 2: Fallback to pattern-based detection (legacy support)
         const { file, why = '' } = item;
         if (why.includes('dependency')) return 'Dependency';
         if (file.endsWith('.yml') || file.endsWith('.properties') || why.includes('connection string')) return 'Configuration';
@@ -142,25 +148,51 @@
       }
 
       function generateInsight(item) {
+          // PRIORITY 1: Use AI-generated insights from LLM output (ai_review_assistant field)
+          if (item.ai_review_assistant && 
+              item.ai_review_assistant.potential_risk && 
+              item.ai_review_assistant.suggested_action) {
+              return e('div', {className: 'insight-card'}, [
+                e('div', {className: 'heading'}, '💡 AI Review Assistant'),
+                e('p', {style: {margin: 0}}, [ 
+                  e('strong', null, 'Potential Risk: '), 
+                  maskPII(item.ai_review_assistant.potential_risk), 
+                  e('br'), 
+                  e('strong', null, 'Suggested Action: '), 
+                  maskPII(item.ai_review_assistant.suggested_action) 
+                ])
+              ]);
+          }
+          
+          // PRIORITY 2: Derive insights from 'why' field if AI data is missing (legacy/fallback support)
           const { why = '' } = item;
           let insight = { risk: 'N/A', action: 'Review the change details below.' };
           const maskedWhy = maskPII(why);
+          
+          // Pattern-based fallback for backward compatibility
           if (maskedWhy.includes('null safety check')) {
               insight = { risk: 'May cause NullPointerExceptions if input is not handled upstream.', action: 'Verify input is guaranteed to be valid or reject this change.' };
-          } else if (maskedWhy.includes('Database connection string changed')) {
+          } else if (maskedWhy.includes('Database connection string changed') || maskedWhy.includes('connection string')) {
               insight = { risk: 'Pointing the application to a new database can cause data corruption or breaches.', action: 'Confirm with the infrastructure team that this endpoint change is authorized.' };
-          } else if (maskedWhy.includes('username escalated')) {
+          } else if (maskedWhy.includes('username escalated') || maskedWhy.includes('privileges')) {
               insight = { risk: 'Escalating database privileges increases the attack surface.', action: 'This change requires senior approval. Verify the justification for these new permissions.' };
-          } else if (maskedWhy.includes('password modified')) {
+          } else if (maskedWhy.includes('password modified') || maskedWhy.includes('credential')) {
               insight = { risk: 'Unauthorized credential changes are a critical security threat.', action: 'Immediately verify this change with the security and operations teams.' };
-          } else if (maskedWhy.includes('Liveness probe configuration weakened')) {
+          } else if (maskedWhy.includes('Liveness probe') || maskedWhy.includes('health check')) {
               insight = { risk: 'Weakened health checks can hide application instability, delaying recovery.', action: 'Consult SRE/DevOps to ensure this change meets reliability standards.' };
-          } else if (maskedWhy.includes('dependency downgraded')) {
+          } else if (maskedWhy.includes('dependency downgraded') || maskedWhy.includes('downgrade')) {
               insight = { risk: 'Downgrading dependencies can re-introduce known vulnerabilities.', action: 'Scan the old version for CVEs and confirm the reason for the downgrade.' };
           }
+          
           return e('div', {className: 'insight-card'}, [
             e('div', {className: 'heading'}, '💡 AI Review Assistant'),
-            e('p', {style: {margin: 0}}, [ e('strong', null, 'Potential Risk: '), insight.risk, e('br'), e('strong', null, 'Suggested Action: '), insight.action ])
+            e('p', {style: {margin: 0}}, [ 
+              e('strong', null, 'Potential Risk: '), 
+              insight.risk, 
+              e('br'), 
+              e('strong', null, 'Suggested Action: '), 
+              insight.action 
+            ])
           ]);
       }
 
@@ -190,15 +222,37 @@
       };
 
       const ConfigChangeIssue = ({ item }) => {
-        const { old = null, new: newVal = null } = item;
+        const { old = null, new: newVal = null, remediation = {} } = item;
         const maskedOld = maskPII(old || '');
         const maskedNew = maskPII(newVal || '');
         
-        // GitHub Desktop style: show old line (red) and new line (green) stacked
-        return e('div', { className: 'diff-view mono' }, [
-          maskedOld && e('div', { key: 'old', className: 'diff-line del' }, `- ${maskedOld}`),
-          maskedNew && e('div', { key: 'new', className: 'diff-line add' }, `+ ${maskedNew}`)
-        ].filter(Boolean));
+        const elements = [];
+        
+        // Show the actual config change (old vs new)
+        if (maskedOld || maskedNew) {
+          elements.push(
+            e('div', { key: 'change', className: 'diff-view mono' }, [
+              maskedOld && e('div', { key: 'old', className: 'diff-line del' }, `- ${maskedOld}`),
+              maskedNew && e('div', { key: 'new', className: 'diff-line add' }, `+ ${maskedNew}`)
+            ].filter(Boolean))
+          );
+        }
+        
+        // Show remediation steps if available from LLM output
+        if (remediation.steps && Array.isArray(remediation.steps) && remediation.steps.length > 0) {
+          elements.push(
+            e('div', { key: 'steps', style: {marginTop: '12px'} }, [
+              e('strong', null, '🔧 Remediation Steps:'),
+              e('ol', { style: {margin: '8px 0', paddingLeft: '20px'} }, 
+                remediation.steps.map((step, i) => 
+                  e('li', {key: i, style: {marginBottom: '4px'}}, maskPII(step))
+                )
+              )
+            ])
+          );
+        }
+        
+        return e('div', null, elements);
       };
       
       function Issue({item, bucket}) {

@@ -169,6 +169,15 @@ def _parse_config_file(p: Path) -> Optional[Dict[str, Any]]:
 def semantic_config_diff(g_root: Path, c_root: Path, changed_paths: List[str]) -> Dict[str, Dict[str, Any]]:
     added, removed, changed = {}, {}, {}
     for rel in changed_paths:
+        # DEDUPLICATION FIX: Skip Spring application files (handled by detector_spring_profiles)
+        # This prevents duplicate deltas for the same configuration changes
+        rel_lower = rel.lower()
+        if ('application' in rel_lower and 
+            (rel_lower.endswith('.yml') or rel_lower.endswith('.yaml') or rel_lower.endswith('.properties'))):
+            # Skip files like: application.yml, application-*.yml, application-dev.properties, etc.
+            # These will be processed by detector_spring_profiles() which provides better metadata
+            continue
+        
         p_g = g_root / rel
         p_c = c_root / rel
         if p_c.suffix.lower() not in (".yml",".yaml",".json",".properties",".toml",".ini",".cfg",".conf"):

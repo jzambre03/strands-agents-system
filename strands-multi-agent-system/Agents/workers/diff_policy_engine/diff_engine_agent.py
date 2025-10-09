@@ -208,14 +208,22 @@ class DiffPolicyEngineAgent(Agent):
             deduplicated_deltas = []
             
             for delta in all_deltas_to_analyze:
-                # Create unique key: file + key + old_value + new_value + category
-                unique_key = f"{delta.get('file', '')}:{delta.get('key', '')}:{delta.get('old_value', '')}:{delta.get('new_value', '')}:{delta.get('category', '')}"
+                # Create unique key: file + locator.value + old + new
+                # NOTE: NOT including category to catch duplicates even if categorized differently
+                # (e.g., cfg~ vs spring~ for the same change)
+                locator_value = delta.get('locator', {}).get('value', '')
+                old_val = str(delta.get('old', ''))
+                new_val = str(delta.get('new', ''))
+                file = delta.get('file', '')
+                
+                # Don't include category in key - same change is same change regardless of category
+                unique_key = f"{file}:{locator_value}:{old_val}:{new_val}"
                 
                 if unique_key not in seen_deltas:
                     seen_deltas[unique_key] = delta
                     deduplicated_deltas.append(delta)
                 else:
-                    logger.debug(f"   🔄 Skipping duplicate delta: {delta.get('file', '')}:{delta.get('key', '')}")
+                    logger.info(f"   🔄 Skipping duplicate delta: {file}:{locator_value} (ID: {delta.get('id', 'unknown')}, kept: {seen_deltas[unique_key].get('id', 'unknown')})")
             
             logger.info(f"   ✅ Deduplicated: {len(all_deltas_to_analyze)} → {len(deduplicated_deltas)} deltas")
             
@@ -1898,11 +1906,29 @@ IMPORTANT:
             item["old"] = str(delta.get('old', '')) if delta.get('old') is not None else None
             item["new"] = str(delta.get('new', '')) if delta.get('new') is not None else None
             
+            # Determine drift_category based on content
+            if 'password' in old_val or 'secret' in old_val or 'credential' in old_val:
+                drift_cat = "Database"
+            elif 'jdbc' in old_val or 'datasource' in old_val or 'database' in old_val or 'db' in old_val:
+                drift_cat = "Database"
+            elif 'url' in old_val or 'endpoint' in old_val or 'host' in old_val or 'port' in old_val:
+                drift_cat = "Network"
+            elif category.startswith('dependency'):
+                drift_cat = "Dependency"
+            elif 'feature' in old_val or 'flag' in old_val or 'enabled' in old_val:
+                drift_cat = "Functional"
+            elif 'timeout' in old_val or 'cache' in old_val or 'pool' in old_val:
+                drift_cat = "Configuration"
+            else:
+                drift_cat = "Configuration"
+            
+            item["drift_category"] = drift_cat
+            
             if bucket == 'allowed_variance':
-                # Allowed variance: id, file, locator, old, new, rationale
+                # Allowed variance: id, file, locator, old, new, drift_category, rationale
                 item["rationale"] = f"Environment-specific {category} (allowed by policy: {policy_tag})"
             else:
-                # High/medium/low: id, file, locator, old, new, why, remediation
+                # High/medium/low: id, file, locator, old, new, drift_category, why, remediation
                 old_str = str(delta.get('old', ''))[:50]
                 new_str = str(delta.get('new', ''))[:50]
                 

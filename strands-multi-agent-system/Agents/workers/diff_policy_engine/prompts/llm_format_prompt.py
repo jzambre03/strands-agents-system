@@ -79,7 +79,7 @@ Your task is to categorize ALL {len(deltas)} configuration changes into risk buc
     prompt += f"""
 ## OUTPUT FORMAT
 
-Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
+Return ONLY valid JSON with this EXACT structure. Include drift_category for each item.
 
 ```json
 {{
@@ -93,6 +93,7 @@ Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
       }},
       "old": "exact text that was removed or changed FROM",
       "new": "exact text that was added or changed TO",
+      "drift_category": "Database|Network|Functional|Logical|Dependency|Configuration|Other",
       "why": "What changed and its impact",
       "remediation": {{
         "snippet": "corrected configuration value"
@@ -109,6 +110,7 @@ Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
       }},
       "old": "text before change",
       "new": "text after change",
+      "drift_category": "Database|Network|Functional|Logical|Dependency|Configuration|Other",
       "why": "What changed and why it matters",
       "remediation": {{
         "snippet": "corrected value"
@@ -126,6 +128,7 @@ Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
       }},
       "old": "text before change",
       "new": "text after change",
+      "drift_category": "Database|Network|Functional|Logical|Dependency|Configuration|Other",
       "rationale": "Why this change is acceptable"
     }}
   ]
@@ -143,6 +146,7 @@ Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
   - **If type is "unidiff"**: Also include old_start, old_lines, new_start, new_lines from the delta
 - **old**: EXACT text that was removed/changed FROM (from Old Value above)
 - **new**: EXACT text that was added/changed TO (from New Value above)
+- **drift_category**: REQUIRED - Classify as one of: Database, Network, Functional, Logical, Dependency, Configuration, Other
 - **why**: Single sentence explaining what changed and its impact
 - **remediation**: Object with "snippet" field containing corrected value
 
@@ -152,17 +156,28 @@ Return ONLY valid JSON with this EXACT structure. DO NOT add any extra fields.
 - **locator**: Same as above
 - **old**: EXACT text before change
 - **new**: EXACT text after change
+- **drift_category**: REQUIRED - Same classification as above
 - **rationale**: Single sentence explaining why this variance is acceptable
+
+## DRIFT CATEGORY GUIDELINES
+
+Choose the most appropriate category:
+- **Database**: Database connections, credentials, schemas, queries
+- **Network**: URLs, endpoints, ports, hosts, IP addresses
+- **Functional**: Feature flags, business logic, workflows
+- **Logical**: Conditionals, algorithms, calculations
+- **Dependency**: Libraries, packages, versions
+- **Configuration**: General settings, timeouts, limits
+- **Other**: Anything that doesn't fit above categories
 
 ## DO NOT INCLUDE
 
 DO NOT add these fields (they are NOT in the desired format):
-- drift_category
-- risk_level
-- risk_reason
-- ai_review_assistant
+- risk_level (inferred from bucket)
+- risk_reason (use "why" instead)
+- ai_review_assistant (separate field)
 - why_allowed (use "rationale" instead)
-- remediation.steps
+- remediation.steps (optional, can add if helpful)
 - remediation.patch_hint (optional, only if you have full git diff)
 
 ## CATEGORIZATION GUIDELINES

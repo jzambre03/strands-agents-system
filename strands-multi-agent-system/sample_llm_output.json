@@ -18,9 +18,19 @@
       },
       "old": "jdbc:oracle:thin:@nposqa4.ebiz.verizon.com:2055/nposqa4",
       "new": "jdbc:oracle:thin:@nposqa4.ebiz.verizon.com:2055/nposqa4_new",
+      "drift_category": "Database",
       "why": "Database connection string changed from nposqa4 to nposqa4_new without justification",
       "remediation": {
-        "snippet": "POSDB_JDBC_URL: jdbc:oracle:thin:@nposqa4.ebiz.verizon.com:2055/nposqa4"
+        "snippet": "POSDB_JDBC_URL: jdbc:oracle:thin:@nposqa4.ebiz.verizon.com:2055/nposqa4",
+        "steps": [
+          "Verify new database endpoint is accessible and authorized",
+          "Test database connectivity before deployment",
+          "Update connection pool settings if needed"
+        ]
+      },
+      "ai_review_assistant": {
+        "potential_risk": "Pointing the application to a new database can cause data corruption, service outages, or unauthorized data access if the new endpoint is not properly configured or authorized.",
+        "suggested_action": "Immediately verify this change with the database and infrastructure teams. Confirm the new endpoint is correct, accessible, and authorized for production use before deployment."
       }
     },
     {
@@ -32,9 +42,19 @@
       },
       "old": "sqa4_user",
       "new": "sqa4_user_admin",
+      "drift_category": "Database",
       "why": "Database username escalated from sqa4_user to sqa4_user_admin without authorization",
       "remediation": {
-        "snippet": "POSDB_USERNAME: sqa4_user"
+        "snippet": "POSDB_USERNAME: sqa4_user",
+        "steps": [
+          "Revert to original read-only user account",
+          "Document justification if admin privileges are required",
+          "Obtain security team approval for privilege escalation"
+        ]
+      },
+      "ai_review_assistant": {
+        "potential_risk": "Escalating database privileges from a standard user to an admin account significantly increases the attack surface and security risks. Unauthorized admin access could lead to data breaches, data corruption, or complete database compromise.",
+        "suggested_action": "This change requires immediate senior security approval. Verify the justification for these elevated permissions and ensure principle of least privilege is maintained. Consider using separate admin credentials for specific operations instead."
       }
     },
     {
@@ -46,9 +66,19 @@
       },
       "old": "AES:bHV6rgY3nDUlaV0Cyw1jTA",
       "new": "AES:bHV6rgY3nDUlaV0Cyw1jTA_updated",
+      "drift_category": "Database",
       "why": "Database password modified without authorization",
       "remediation": {
-        "snippet": "POSDB_PASSWORD: AES:bHV6rgY3nDUlaV0Cyw1jTA"
+        "snippet": "POSDB_PASSWORD: AES:bHV6rgY3nDUlaV0Cyw1jTA",
+        "steps": [
+          "Revert to original encrypted password",
+          "Verify password change was not compromised",
+          "Follow secure password rotation procedures"
+        ]
+      },
+      "ai_review_assistant": {
+        "potential_risk": "Unauthorized credential changes are a critical security threat that could indicate a security breach, compromise authentication systems, or lead to unauthorized database access. This could result in data theft or system compromise.",
+        "suggested_action": "Immediately verify this change with the security and operations teams. Investigate whether this was an authorized change or potential security incident. Ensure proper password rotation procedures were followed and audit logs reviewed."
       }
     },
     {
@@ -60,6 +90,7 @@
       },
       "old": null,
       "new": "25",
+      "drift_category": "Database",
       "why": "Unauthorized database connection pool configuration added",
       "remediation": {
         "snippet": "# Remove line: POSDB_CONNECTION_POOL_SIZE: 25"
@@ -95,9 +126,19 @@
       },
       "old": "10",
       "new": "30",
+      "drift_category": "Configuration",
       "why": "Liveness probe period increased from 10s to 30s which may delay failure detection",
       "remediation": {
-        "snippet": "livenessProbe:\n  periodSeconds: 10"
+        "snippet": "livenessProbe:\n  periodSeconds: 10",
+        "steps": [
+          "Revert probe period to 10 seconds",
+          "Test application health check response times",
+          "Consult with SRE team if longer intervals are needed"
+        ]
+      },
+      "ai_review_assistant": {
+        "potential_risk": "Weakened health checks can hide application instability and delay failure detection. This means the system will take 3x longer to detect and respond to application failures, potentially leading to extended downtime and degraded user experience.",
+        "suggested_action": "Consult with SRE/DevOps teams to ensure this change meets reliability standards. If longer intervals are required due to slow startup times, consider using separate startup probes instead of weakening liveness checks."
       }
     },
     {
@@ -123,9 +164,19 @@
       },
       "old": "2.7.0",
       "new": "2.6.5",
+      "drift_category": "Dependency",
       "why": "Spring Boot starter downgraded from 2.7.0 to 2.6.5 which may reintroduce vulnerabilities",
       "remediation": {
-        "snippet": "<dependency>\n  <groupId>org.springframework.boot</groupId>\n  <artifactId>spring-boot-starter-web</artifactId>\n  <version>2.7.0</version>\n</dependency>"
+        "snippet": "<dependency>\n  <groupId>org.springframework.boot</groupId>\n  <artifactId>spring-boot-starter-web</artifactId>\n  <version>2.7.0</version>\n</dependency>",
+        "steps": [
+          "Upgrade back to Spring Boot 2.7.0 or later",
+          "Run vulnerability scan on version 2.6.5",
+          "Review release notes for security patches in 2.7.0"
+        ]
+      },
+      "ai_review_assistant": {
+        "potential_risk": "Downgrading dependencies can reintroduce known security vulnerabilities (CVEs) that were patched in newer versions. This exposes the application to potential exploits and security breaches.",
+        "suggested_action": "Scan version 2.6.5 for known CVEs and compare with 2.7.0. Confirm the reason for the downgrade and ensure it's not introducing critical security vulnerabilities. Consider upgrading to the latest stable version instead."
       }
     },
     {

@@ -737,6 +737,7 @@ class ConfigCollectorAgent(Agent):
             overview = {
                 "golden_files": len(golden_files),
                 "drift_files": len(drift_files),
+                "files_compared": len(golden_paths),  # ADDED: Total files compared (needed for summary)
                 "languages_hint": sorted({
                     f["ext"] for f in drift_files 
                     if f["file_type"] == "code"
