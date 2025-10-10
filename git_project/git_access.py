@@ -543,18 +543,21 @@ should be stored elsewhere (database, object storage, etc.)
         print("✅ Migration Complete!")
         print("=" * 70)
         print(f"\n📊 Summary:")
-        print(f"   Total files in source: {len(all_files)}")
+        print(f"   Config files found: {len(config_files)}")
         print(f"   Config files copied: {len(file_actions)}")
         print(f"   Folders created: {len(folders)}")
+        if skipped_large_files:
+            print(f"   Large files skipped: {len(skipped_large_files)}")
         print(f"   New repository: {new_repo_url}")
         print(f"   Project URL: {new_project['web_url']}")
-        print(f"\n💡 Note: All operations via GitLab REST API - no files written to disk")
+        print(f"\n💡 Note: All operations via GitLab Search API - no full tree fetch, no disk writes")
         
         return {
             "status": "success",
             "files_copied": len(file_actions),
             "folders_created": len(folders),
-            "total_source_files": len(all_files),
+            "config_files_found": len(config_files),
+            "large_files_skipped": len(skipped_large_files),
             "new_repo_url": new_repo_url,
             "project_url": new_project['web_url']
         }
