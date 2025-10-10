@@ -230,18 +230,30 @@ def copy_config_files_to_new_repo(
     keep_history: bool = True,
     base_url: str = "https://gitlab.com",
     visibility: str = "private",
-    target_branch: str = "main"
+    target_branch: str = "main",
+    max_file_size_mb: int = 10,
+    max_total_size_mb: int = 100,
+    create_placeholders_for_skipped: bool = True
 ):
     """
     Create a new GitLab repo and copy only config files from source repo using API (no cloning).
+    
+    Uses GitLab Search API to find files by extension - extremely fast even for large repos!
+    Instead of fetching all files (could be 10k+), only searches for specified config extensions.
     
     Args:
         source_repo_url: URL of source repository
         new_project_name: Name for new project
         token: GitLab personal access token
         namespace: Optional namespace/group for new project
-        config_extensions: List of config file extensions to copy
+        config_extensions: List of config file extensions to copy (e.g., ['yml', 'properties'])
         keep_history: If True, preserves Git history (not implemented in API version)
+        base_url: GitLab instance URL
+        visibility: Project visibility ('private', 'internal', 'public')
+        target_branch: Branch to commit to
+        max_file_size_mb: Skip files larger than this (MB)
+        max_total_size_mb: Warn if total memory usage exceeds this (MB)
+        create_placeholders_for_skipped: Create .SKIPPED.md files for large files
         
     Returns:
         dict with result info
@@ -250,13 +262,14 @@ def copy_config_files_to_new_repo(
         config_extensions = ['yml', 'yaml', 'properties', 'conf', 'config', 'toml', 'env']
     
     print("=" * 70)
-    print("🚀 Config Files Migration to New Repository (API Mode - No Cloning)")
+    print("🚀 Config Files Migration to New Repository (Optimized)")
     print("=" * 70)
     print(f"\n📋 Configuration:")
     print(f"   Source: {source_repo_url}")
     print(f"   New Project: {new_project_name}")
     print(f"   Config Extensions: {', '.join(config_extensions)}")
-    print(f"   Method: GitLab REST API (no disk download)")
+    print(f"   Method: GitLab Search API (fast, targeted, no disk download)")
+    print(f"   Performance: Only fetches {len(config_extensions)} extensions (not entire repo tree)")
     
     try:
         # Parse source project path
@@ -281,65 +294,75 @@ def copy_config_files_to_new_repo(
         new_project_id = new_project['id']
         new_repo_url = new_project['http_url_to_repo']
         
-        # Step 2: Get file tree from source repository
+        # Step 2: Search for config files by extension (optimized - no full tree fetch!)
         print("\n" + "=" * 70)
-        print("Step 2: Fetching File Tree from Source Repository")
+        print("Step 2: Searching for Config Files (by extension)")
         print("=" * 70)
         
-        print(f"   Fetching file tree via API...")
-        tree_url = f"{base_url}/api/v4/projects/{source_project_id}/repository/tree"
-        
-        all_files = []
-        page = 1
-        per_page = 100
-        
-        while True:
-            response = requests.get(
-                tree_url,
-                headers=headers,
-                params={'recursive': 'true', 'per_page': per_page, 'page': page}
-            )
-            
-            if response.status_code != 200:
-                return {"status": "error", "message": f"Failed to fetch file tree: {response.status_code}"}
-            
-            files = response.json()
-            if not files:
-                break
-                
-            all_files.extend(files)
-            print(f"   Fetched {len(all_files)} files so far...")
-            
-            # Check if there are more pages
-            if len(files) < per_page:
-                break
-            page += 1
-        
-        print(f"✅ Total files in repository: {len(all_files)}")
-        
-        # Step 3: Filter config files
-        print("\n" + "=" * 70)
-        print("Step 3: Filtering Config Files")
-        print("=" * 70)
+        print(f"   Searching for extensions: {', '.join(config_extensions)}")
+        print(f"   Using GitLab search API (much faster than fetching all files)...")
         
         config_files = []
-        for file in all_files:
-            if file['type'] != 'blob':  # Skip directories
-                continue
-            
-            file_path = file['path']
-            
-            # Skip .git directory
-            if file_path.startswith('.git/'):
-                continue
-            
-            # Check if file matches config extensions
-            for ext in config_extensions:
-                if file_path.endswith(f'.{ext}'):
-                    config_files.append(file)
-                    break
+        seen_paths = set()  # Avoid duplicates
         
-        print(f"\n✅ Found {len(config_files)} config files:")
+        # Search for files matching each extension
+        for ext in config_extensions:
+            print(f"   Searching for *.{ext} files...")
+            search_url = f"{base_url}/api/v4/projects/{source_project_id}/search"
+            
+            page = 1
+            per_page = 100
+            ext_count = 0
+            
+            while True:
+                response = requests.get(
+                    search_url,
+                    headers=headers,
+                    params={
+                        'scope': 'blobs',
+                        'search': f'filename:*.{ext}',
+                        'per_page': per_page,
+                        'page': page
+                    }
+                )
+                
+                if response.status_code != 200:
+                    print(f"   ⚠️  Warning: Search failed for *.{ext}: {response.status_code}")
+                    break
+                
+                results = response.json()
+                if not results:
+                    break
+                
+                for result in results:
+                    file_path = result.get('path') or result.get('filename')
+                    
+                    # Skip if we've already seen this file (avoid duplicates)
+                    if file_path in seen_paths:
+                        continue
+                    
+                    # Skip .git directory
+                    if file_path and file_path.startswith('.git/'):
+                        continue
+                    
+                    # Verify file actually ends with the extension
+                    if file_path and file_path.endswith(f'.{ext}'):
+                        config_files.append({
+                            'path': file_path,
+                            'type': 'blob'
+                        })
+                        seen_paths.add(file_path)
+                        ext_count += 1
+                
+                # Check if there are more pages
+                if len(results) < per_page:
+                    break
+                page += 1
+            
+            if ext_count > 0:
+                print(f"      ✅ Found {ext_count} *.{ext} files")
+        
+        print(f"\n✅ Found {len(config_files)} config files total (matching extensions: {', '.join(config_extensions)}):")
         for i, file in enumerate(config_files[:10], 1):
             print(f"   {i}. {file['path']}")
         if len(config_files) > 10:
@@ -351,11 +374,17 @@ def copy_config_files_to_new_repo(
         
         # Step 4: Get file contents
         print("\n" + "=" * 70)
-        print("Step 4: Downloading Config File Contents")
+        print("Step 4: Fetching Config File Contents (to memory)")
         print("=" * 70)
         
         file_actions = []
         folders = set()
+        skipped_large_files = []
+        total_size_mb = 0
+        
+        # Safety limits (configurable)
+        MAX_FILE_SIZE_MB = max_file_size_mb
+        MAX_TOTAL_SIZE_MB = max_total_size_mb
         
         for i, file in enumerate(config_files, 1):
             file_path = file['path']
@@ -370,6 +399,77 @@ def copy_config_files_to_new_repo(
                 if content_response.status_code == 200:
                     content = content_response.text
                     
+                    # Check file size
+                    file_size_mb = len(content.encode('utf-8')) / (1024 * 1024)
+                    
+                    if file_size_mb > MAX_FILE_SIZE_MB:
+                        print(f"   ⚠️  Skipping {file_path} (size: {file_size_mb:.2f}MB exceeds {MAX_FILE_SIZE_MB}MB limit)")
+                        skipped_large_files.append({
+                            'path': file_path, 
+                            'size_mb': file_size_mb,
+                            'url': content_url
+                        })
+                        
+                        # Create placeholder file explaining why it was skipped
+                        if create_placeholders_for_skipped:
+                            placeholder_content = f"""# FILE TOO LARGE - NOT MIGRATED
+
+This file was skipped during automated migration because it exceeds the size limit.
+
+**Original File:** {file_path}
+**File Size:** {file_size_mb:.2f} MB
+**Size Limit:** {MAX_FILE_SIZE_MB} MB
+**Source Repository:** {source_repo_url}
+
+## How to Migrate This File Manually
+
+### Option 1: Increase the limit and re-run
+Update your .env file:
+```bash
+MAX_FILE_SIZE_MB=50  # Or higher
+```
+
+Then run migration again with a different project name.
+
+### Option 2: Download and upload manually
+```bash
+# Download from source
+curl -H "PRIVATE-TOKEN: your_token" "{content_url}" > {file_path}
+
+# Add to this repository
+git add {file_path}
+git commit -m "Add large config file: {file_path}"
+git push
+```
+
+### Option 3: Use Git LFS (for very large files)
+```bash
+git lfs install
+git lfs track "{file_path}"
+git add .gitattributes {file_path}
+git commit -m "Add large file with LFS"
+git push
+```
+
+**Note:** Config files this large may indicate they contain data that 
+should be stored elsewhere (database, object storage, etc.)
+"""
+                            file_actions.append({
+                                'action': 'create',
+                                'file_path': f"{file_path}.SKIPPED.md",
+                                'content': placeholder_content
+                            })
+                            print(f"      → Created placeholder: {file_path}.SKIPPED.md")
+                        
+                        continue
+                    
+                    total_size_mb += file_size_mb
+                    
+                    # Warn if approaching memory limit
+                    if total_size_mb > MAX_TOTAL_SIZE_MB:
+                        print(f"\n⚠️  WARNING: Total size ({total_size_mb:.2f}MB) exceeds recommended limit ({MAX_TOTAL_SIZE_MB}MB)")
+                        print(f"   This may cause memory issues. Consider running in batches.")
+                    
                     file_actions.append({
                         'action': 'create',
                         'file_path': file_path,
@@ -382,14 +482,24 @@ def copy_config_files_to_new_repo(
                         folders.add(folder)
                     
                     if i % 10 == 0 or i == len(config_files):
-                        print(f"   Downloaded {i}/{len(config_files)} files...")
+                        print(f"   Fetched {i}/{len(config_files)} files (total: {total_size_mb:.2f}MB in memory)...")
                 else:
-                    print(f"   ⚠️  Warning: Could not download {file_path} (status: {content_response.status_code})")
+                    print(f"   ⚠️  Warning: Could not fetch {file_path} (status: {content_response.status_code})")
                     
             except Exception as e:
-                print(f"   ⚠️  Warning: Error downloading {file_path}: {e}")
+                print(f"   ⚠️  Warning: Error fetching {file_path}: {e}")
         
-        print(f"✅ Successfully downloaded {len(file_actions)} config files")
+        print(f"✅ Successfully fetched {len(file_actions)} config files (total: {total_size_mb:.2f}MB in memory)")
+        
+        if skipped_large_files:
+            print(f"\n⚠️  Skipped {len(skipped_large_files)} large files (see .SKIPPED.md files for instructions):")
+            for skipped in skipped_large_files[:5]:
+                print(f"   - {skipped['path']} ({skipped['size_mb']:.2f}MB)")
+            if len(skipped_large_files) > 5:
+                print(f"   ... and {len(skipped_large_files) - 5} more")
+            print(f"\n💡 To migrate skipped files:")
+            print(f"   1. Increase MAX_FILE_SIZE_MB in .env")
+            print(f"   2. Or check the .SKIPPED.md files for manual migration steps")
         
         # Step 5: Batch commit all files to new repository
         print("\n" + "=" * 70)
@@ -438,7 +548,7 @@ def copy_config_files_to_new_repo(
         print(f"   Folders created: {len(folders)}")
         print(f"   New repository: {new_repo_url}")
         print(f"   Project URL: {new_project['web_url']}")
-        print(f"\n💡 Note: No files were downloaded to disk - all via GitLab API")
+        print(f"\n💡 Note: All operations via GitLab REST API - no files written to disk")
         
         return {
             "status": "success",
