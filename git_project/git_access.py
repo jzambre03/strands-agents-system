@@ -11,9 +11,6 @@ Usage:
 import os
 import sys
 import requests
-import tempfile
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
@@ -222,33 +219,6 @@ def create_gitlab_project(token: str, project_name: str, namespace: str = None, 
     except Exception as e:
         print(f"❌ Error creating project: {e}")
         return None
-
-
-def get_config_files(repo_path: Path, extensions: List[str]) -> List[Path]:
-    """
-    Find all config files with specified extensions in a repository.
-    
-    Args:
-        repo_path: Path to repository
-        extensions: List of file extensions (e.g., ['yml', 'yaml', 'properties'])
-        
-    Returns:
-        List of Path objects for config files
-    """
-    config_files = []
-    
-    for ext in extensions:
-        # Find files with this extension
-        pattern = f"**/*.{ext}"
-        files = list(repo_path.glob(pattern))
-        config_files.extend(files)
-    
-    # Also check for files without extensions (like 'config')
-    for file_path in repo_path.rglob("*"):
-        if file_path.is_file() and file_path.suffix == '' and file_path.name in ['config', 'env']:
-            config_files.append(file_path)
-    
-    return sorted(set(config_files))
 
 
 def copy_config_files_to_new_repo(
