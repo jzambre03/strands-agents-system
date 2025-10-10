@@ -29,6 +29,11 @@ def migrate_configs():
     config_extensions = os.getenv('CONFIG_EXTENSIONS', 'yml,yaml,properties,conf,config,toml,env')
     keep_history = os.getenv('KEEP_HISTORY', 'true').lower() == 'true'
     
+    # Memory safety limits
+    max_file_size_mb = int(os.getenv('MAX_FILE_SIZE_MB', '10'))
+    max_total_size_mb = int(os.getenv('MAX_TOTAL_SIZE_MB', '100'))
+    create_placeholders = os.getenv('CREATE_PLACEHOLDERS_FOR_SKIPPED', 'true').lower() == 'true'
+    
     # Validate required variables
     if not token:
         print("❌ Missing GITLAB_TOKEN in .env file")
@@ -57,6 +62,8 @@ def migrate_configs():
     print(f"   TARGET_BRANCH: {target_branch}")
     print(f"   CONFIG_EXTENSIONS: {', '.join(extensions_list)}")
     print(f"   KEEP_HISTORY: {keep_history}")
+    print(f"   MAX_FILE_SIZE_MB: {max_file_size_mb}")
+    print(f"   MAX_TOTAL_SIZE_MB: {max_total_size_mb}")
     print("=" * 70)
     
     # Run migration
@@ -69,7 +76,10 @@ def migrate_configs():
         keep_history=keep_history,
         base_url=base_url,
         visibility=visibility,
-        target_branch=target_branch
+        target_branch=target_branch,
+        max_file_size_mb=max_file_size_mb,
+        max_total_size_mb=max_total_size_mb,
+        create_placeholders_for_skipped=create_placeholders
     )
     
     # Check result
